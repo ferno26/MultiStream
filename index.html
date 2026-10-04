@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Multiview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#1A2130; --panel:#232C3D; --line:#344057; --text:#DCE3EE; --dim:#8794AB;
+  --tally:#E8483F; --amber:#F0A830; --cols:2;
+  color-scheme:dark; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.45 "Barlow",system-ui,sans-serif;display:flex;flex-direction:column}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+/* Top bar */
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem 1rem;padding:.6rem 1rem;border-bottom:1px solid var(--line)}
+.brand{font:700 1.35rem/1 "Barlow Condensed",sans-serif;letter-spacing:.02em;margin-right:auto;display:flex;align-items:center;gap:.5rem}
+.brand i{width:.7rem;height:.7rem;border-radius:50%;background:var(--tally);box-shadow:0 0 10px var(--tally)}
+.group{display:flex;gap:.25rem;align-items:center}
+.btn{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:.4rem .7rem;cursor:pointer;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:.95rem;display:inline-flex;align-items:center;gap:.35rem;white-space:nowrap}
+.btn:hover{border-color:var(--dim)}
+.btn.primary{background:var(--amber);color:#1A2130;border-color:var(--amber)}
+.btn svg{width:16px;height:16px}
+select.btn{padding-right:.4rem}
+
+/* Bulk fill */
+.bulk{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.5rem 1rem;border-bottom:1px solid var(--line);background:var(--panel)}
+.bulk input[type=text]{flex:1 1 18rem;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:.4rem .6rem}
+.chk{display:flex;align-items:center;gap:.35rem;font-family:"Barlow Condensed",sans-serif;font-weight:600;white-space:nowrap}
+.count{color:var(--dim);font-family:"Barlow Condensed",sans-serif;margin-left:auto}
+.thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:.45}
+
+/* Grid */
+main{flex:1;overflow:auto;padding:.75rem}
+.grid{display:grid;gap:.75rem;grid-template-columns:repeat(var(--cols),minmax(0,1fr))}
+.grid.focus{grid-template-columns:minmax(0,3fr) minmax(0,1fr);grid-auto-flow:dense}
+.grid.focus .slot.is-focus{grid-column:1;grid-row:1 / span var(--rest,1)}
+.grid.focus .slot:not(.is-focus){grid-column:2}
+@media (max-width:720px){
+  .grid,.grid.focus{grid-template-columns:minmax(0,1fr)}
+  .grid.focus .slot{grid-column:1 !important;grid-row:auto !important}
+}
+
+/* Slot: monitor + under-monitor display */
+.slot{background:#000;border:1px solid var(--line);border-radius:3px;display:flex;flex-direction:column;min-width:0}
+.slot.playing{border-color:var(--tally)}
+.slot.drag{border-color:var(--amber)}
+.screen{position:relative;aspect-ratio:16/9;background:#0E131D}
+.grid.focus .is-focus .screen{aspect-ratio:auto;flex:1;min-height:min(56vw,70vh)}
+.screen iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:var(--dim);padding:1rem}
+.empty b{font:600 1.25rem "Barlow Condensed",sans-serif;color:var(--text);display:block;margin-bottom:.2rem}
+.umd{display:flex;align-items:center;gap:.4rem;padding:.35rem .45rem;background:var(--panel);border-top:1px solid var(--line)}
+.tally{flex:none;width:.6rem;height:.6rem;border-radius:50%;background:var(--line)}
+.playing .tally{background:var(--tally);box-shadow:0 0 8px var(--tally)}
+.umd input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:3px;padding:.3rem .5rem;font-family:"Barlow Condensed",sans-serif;font-size:.95rem}
+.umd input.bad{border-color:var(--tally)}
+.ico{flex:none;background:none;border:0;padding:.3rem;border-radius:3px;cursor:pointer;color:var(--dim);display:grid}
+.ico:hover{color:var(--text);background:var(--line)}
+.ico.on{color:var(--amber)}
+.ico svg{width:18px;height:18px}
+.toast{position:fixed;left:50%;bottom:calc(1rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--amber);color:#1A2130;padding:.45rem .9rem;border-radius:4px;font:600 .95rem "Barlow Condensed",sans-serif;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><i aria-hidden="true"></i>Multiview</div>
+  <div class="group">
+    <button class="btn primary" id="add">+ Add slot</button>
+    <select class="btn" id="cols" aria-label="Columns">
+      <option value="auto">Auto grid</option><option value="1">1 column</option>
+      <option value="2">2 columns</option><option value="3">3 columns</option><option value="4">4 columns</option>
+      <option value="6">6 columns</option><option value="8">8 columns</option>
+    </select>
+  </div>
+  <div class="group">
+    <button class="btn" data-all="playVideo">Play all</button>
+    <button class="btn" data-all="pauseVideo">Pause all</button>
+    <button class="btn" data-all="mute">Mute all</button>
+    <button class="btn" data-all="unMute">Unmute all</button>
+    <button class="btn" id="share">Copy share link</button>
+  </div>
+</header>
+<section class="bulk" aria-label="Fill many slots at once">
+  <input type="text" id="bulkUrl" placeholder="Paste one link, or several separated by spaces or new lines" aria-label="Links to fill">
+  <select class="btn" id="bulkN" aria-label="Number of slots">
+    <option>100</option><option>200</option><option>300</option><option>400</option><option>500</option>
+  </select>
+  <label class="chk"><input type="checkbox" id="bulkMute" checked> Start muted</label>
+  <button class="btn primary" id="bulkGo">Fill slots</button>
+  <button class="btn" id="clear">Clear all</button>
+  <span class="count" id="count"></span>
+</section>
+<main><div class="grid" id="grid"></div></main>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+  const ICON = {
+    vol:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7"/></svg>',
+    mute:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5zM22 9l-6 6M16 9l6 6"/></svg>',
+    focus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="14" height="16"/><path d="M19 4h3M19 12h3M19 20h3"/></svg>',
+    pop:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16"/><rect x="12" y="11" width="8" height="7" fill="currentColor"/></svg>',
+    ext:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3h7v7M21 3l-9 9M19 14v7H3V5h7"/></svg>',
+    x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg>'
+  };
+  const KEY = 'multiview:v1';
+  const grid = document.getElementById('grid');
+  const colsSel = document.getElementById('cols');
+  const els = new Map();          // slot id -> { root, iframe, ... }
+  let state = { slots: [], cols: 'auto', focus: null };
+  let seq = 0;
+  // Above this many slots, players that scroll off-screen are unloaded to save memory
+  const LIVE_LIMIT = 24;
+  const io = new IntersectionObserver(entries => {
+    for (const en of entries) {
+      const e = els.get(en.target.dataset.id);
+      const sl = state.slots.find(s => s.id === en.target.dataset.id);
+      if (!e || !sl) continue;
+      e.visible = en.isIntersecting;
+      if (!sl.vid && !sl.list) continue;
+      if (e.visible && !e.iframe) attach(sl, sl.muted); // muted players may autoplay
+      else if (!e.visible && e.iframe && state.slots.length > LIVE_LIMIT) placeholder(sl);
+    }
+  }, { root: document.querySelector('main'), rootMargin: '200px' });
+
+  /* ---------- URL parsing ---------- */
+  function parseTime(t) {
+    if (!t) return 0;
+    if (/^\d+$/.test(t)) return +t;
+    const m = t.match(/(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/);
+    return m ? (+m[1]||0)*3600 + (+m[2]||0)*60 + (+m[3]||0) : 0;
+  }
+  function parse(input) {
+    const s = (input || '').trim();
+    if (/^[\w-]{11}$/.test(s)) return { vid: s };
+    let u; try { u = new URL(/^https?:/i.test(s) ? s : 'https://' + s); } catch { return null; }
+    if (!/(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be)$/i.test(u.hostname)) return null;
+    let vid = null;
+    if (/youtu\.be$/i.test(u.hostname)) vid = u.pathname.slice(1, 12);
+    else vid = u.searchParams.get('v') || (u.pathname.match(/\/(?:embed|shorts|live|v)\/([\w-]{11})/) || [])[1];
+    const list = u.searchParams.get('list');
+    const start = parseTime(u.searchParams.get('t') || u.searchParams.get('start'));
+    if (vid && /^[\w-]{11}$/.test(vid)) return { vid, list, start };
+    if (list) return { vid: null, list, start: 0 };
+    return null;
+  }
+  function embedUrl(sl, autoplay) {
+    const base = 'https://www.youtube-nocookie.com/embed/' + (sl.vid || 'videoseries');
+    const p = new URLSearchParams({ enablejsapi: 1, playsinline: 1, rel: 0, origin: location.origin });
+    if (sl.list) p.set('list', sl.list);
+    if (sl.start) p.set('start', sl.start);
+    if (autoplay) p.set('autoplay', 1);
+    if (sl.muted) p.set('mute', 1);
+    return base + '?' + p;
+  }
+  const watchUrl = sl => sl.vid
+    ? `https://www.youtube.com/watch?v=${sl.vid}${sl.list ? '&list=' + sl.list : ''}${sl.start ? '&t=' + sl.start : ''}`
+    : `https://www.youtube.com/playlist?list=${sl.list}`;
+
+  /* ---------- Persistence ---------- */
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+  }
+  function load() {
+    const h = new URLSearchParams(location.hash.slice(1)).get('v');
+    if (h) {
+      const slots = h.split(',').map(t => parse(t.includes(':') ? t.replace(':', '?t=').replace(/^/, 'youtu.be/') : t)).filter(Boolean);
+      if (slots.length) { state.slots = slots.map(mk); history.replaceState(null, '', location.pathname); return; }
+    }
+    try {
+      const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (s && Array.isArray(s.slots)) state = { ...state, ...s, slots: s.slots.map(mk) };
+    } catch {}
+    if (!state.slots.length) state.slots = [mk(), mk()];
+  }
+  function mk(p = {}) { return { id: 's' + (++seq) + Date.now().toString(36), vid: p.vid || null, list: p.list || null, start: p.start || 0, muted: !!p.muted }; }
+
+  /* ---------- Player messaging (no API script needed) ---------- */
+  function cmd(e, func, args = []) {
+    e.iframe?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+  }
+  window.addEventListener('message', ev => {
+    if (!/^https:\/\/(www\.)?youtube(-nocookie)?\.com$/.test(ev.origin)) return;
+    let d; try { d = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data; } catch { return; }
+    for (const [id, e] of els) {
+      if (e.iframe?.contentWindow !== ev.source) continue;
+      const info = d.info || {};
+      const ps = d.event === 'onStateChange' ? d.info : info.playerState;
+      if (ps !== undefined) e.root.classList.toggle('playing', ps === 1);
+      if (typeof info.muted === 'boolean') {
+        const sl = state.slots.find(s => s.id === id);
+        if (sl && sl.muted !== info.muted) { sl.muted = info.muted; paintMute(e, sl); save(); }
+      }
+    }
+  });
+
+  /* ---------- Rendering ---------- */
+  function build(sl) {
+    const root = document.createElement('article');
+    root.className = 'slot';
+    root.innerHTML = `
+      <div class="screen"></div>
+      <div class="umd">
+        <span class="tally" aria-hidden="true"></span>
+        <input type="url" placeholder="Paste a YouTube link and press Enter" aria-label="YouTube link">
+        <button class="ico" data-a="mute"></button>
+        <button class="ico" data-a="focus" title="Make this the main view" aria-label="Make this the main view">${ICON.focus}</button>
+        <button class="ico" data-a="pop" title="Open in floating player" aria-label="Open in floating player">${ICON.pop}</button>
+        <button class="ico" data-a="ext" title="Open on YouTube" aria-label="Open on YouTube">${ICON.ext}</button>
+        <button class="ico" data-a="x" title="Remove slot" aria-label="Remove slot">${ICON.x}</button>
+      </div>`;
+    const e = { root, screen: root.querySelector('.screen'), input: root.querySelector('input'), iframe: null };
+    els.set(sl.id, e);
+
+    const submit = () => {
+      const p = parse(e.input.value);
+      e.input.classList.toggle('bad', !p && !!e.input.value.trim());
+      if (!p) { if (e.input.value.trim()) toast('That isn’t a YouTube video or playlist link'); return; }
+      Object.assign(sl, { vid: p.vid, list: p.list || null, start: p.start || 0 });
+      mount(sl, true); save();
+    };
+    e.input.addEventListener('keydown', ev => { if (ev.key === 'Enter') submit(); });
+    e.input.addEventListener('paste', () => setTimeout(submit, 0));
+    e.input.addEventListener('input', () => e.input.classList.remove('bad'));
+
+    root.addEventListener('click', ev => {
+      const a = ev.target.closest('[data-a]')?.dataset.a; if (!a) return;
+      if (a === 'mute') { sl.muted = !sl.muted; cmd(e, sl.muted ? 'mute' : 'unMute'); paintMute(e, sl); save(); }
+      if (a === 'focus') { state.focus = state.focus === sl.id ? null : sl.id; layout(); save(); }
+      if (a === 'pop') popout(sl);
+      if (a === 'ext') { if (sl.vid || sl.list) window.open(watchUrl(sl), '_blank', 'noopener'); }
+      if (a === 'x') remove(sl.id);
+    });
+
+    // Drag a link from another tab onto a slot
+    root.addEventListener('dragover', ev => { ev.preventDefault(); root.classList.add('drag'); });
+    root.addEventListener('dragleave', () => root.classList.remove('drag'));
+    root.addEventListener('drop', ev => {
+      ev.preventDefault(); root.classList.remove('drag');
+      e.input.value = ev.dataTransfer.getData('text/uri-list') || ev.dataTransfer.getData('text/plain'); submit();
+    });
+
+    root.dataset.id = sl.id;
+    e.visible = false;
+    grid.appendChild(root);
+    mount(sl, false);
+    io.observe(root);
+    return e;
+  }
+  function paintMute(e, sl) {
+    const b = e.root.querySelector('[data-a="mute"]');
+    b.innerHTML = sl.muted ? ICON.mute : ICON.vol;
+    b.classList.toggle('on', sl.muted);
+    const t = sl.muted ? 'Unmute' : 'Mute'; b.title = t; b.setAttribute('aria-label', t);
+  }
+  function mount(sl, autoplay) {
+    const e = els.get(sl.id);
+    e.input.value = sl.vid || sl.list ? watchUrl(sl) : '';
+    paintMute(e, sl);
+    if (!sl.vid && !sl.list) {
+      e.screen.innerHTML = '<div class="empty"><b>Empty slot</b>Paste a link below, or drag one in from another tab</div>';
+      e.iframe = null; e.root.classList.remove('playing');
+      return;
+    }
+    if (e.visible) attach(sl, autoplay); else placeholder(sl);
+  }
+  // Off-screen slots show a thumbnail instead of a live player
+  function placeholder(sl) {
+    const e = els.get(sl.id);
+    e.iframe = null; e.root.classList.remove('playing');
+    e.screen.innerHTML = (sl.vid ? `<img class="thumb" src="https://i.ytimg.com/vi/${sl.vid}/mqdefault.jpg" alt="" loading="lazy">` : '')
+      + '<div class="empty"><b>Not loaded</b>Loads when scrolled into view</div>';
+  }
+  function attach(sl, autoplay) {
+    const e = els.get(sl.id);
+    e.screen.innerHTML = ''; e.root.classList.remove('playing');
+    const f = document.createElement('iframe');
+    f.src = embedUrl(sl, autoplay);
+    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.allowFullscreen = true;
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    f.title = 'YouTube player';
+    f.addEventListener('load', () => f.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: sl.id, channel: 'widget' }), '*'));
+    e.screen.appendChild(f); e.iframe = f;
+  }
+  function layout() {
+    const n = state.slots.length;
+    if (state.focus && !state.slots.some(s => s.id === state.focus)) state.focus = null;
+    grid.classList.toggle('focus', !!state.focus && n > 1);
+    grid.style.setProperty('--rest', Math.max(1, n - 1));
+    const c = state.cols === 'auto' ? Math.min(8, Math.ceil(Math.sqrt(n))) || 1 : +state.cols;
+    document.getElementById('count').textContent = `${n} slot${n === 1 ? '' : 's'}`;
+    document.documentElement.style.setProperty('--cols', c);
+    colsSel.value = state.cols;
+    for (const [id, e] of els) e.root.classList.toggle('is-focus', id === state.focus);
+    for (const [id, e] of els) e.root.querySelector('[data-a="focus"]').classList.toggle('on', id === state.focus);
+  }
+  function add(p) {
+    const sl = mk(p); state.slots.push(sl); build(sl); layout(); save();
+    if (!p) els.get(sl.id).input.focus();
+    return sl;
+  }
+  function remove(id) {
+    const e = els.get(id);
+    if (e) { io.unobserve(e.root); e.root.remove(); els.delete(id); }
+    state.slots = state.slots.filter(s => s.id !== id);
+    layout(); save();
+  }
+  function clearAll() {
+    for (const e of els.values()) { io.unobserve(e.root); e.root.remove(); }
+    els.clear(); state.slots = []; state.focus = null;
+  }
+
+  /* ---------- Bulk fill ---------- */
+  document.getElementById('bulkGo').onclick = () => {
+    const links = document.getElementById('bulkUrl').value.split(/[\s,]+/).map(parse).filter(Boolean);
+    if (!links.length) return toast('Paste a YouTube video or playlist link first');
+    const n = +document.getElementById('bulkN').value;
+    const muted = document.getElementById('bulkMute').checked;
+    clearAll();
+    // One link repeats; several links cycle in order
+    state.slots = Array.from({ length: n }, (_, i) => mk({ ...links[i % links.length], muted }));
+    state.slots.forEach(build);
+    layout(); save();
+    document.querySelector('main').scrollTop = 0;
+    toast(`Filled ${n} slots`);
+  };
+  document.getElementById('clear').onclick = () => {
+    if (state.slots.length > 2 && !confirm(`Remove all ${state.slots.length} slots?`)) return;
+    clearAll(); add();
+  };
+
+  /* ---------- External / floating player ---------- */
+  async function popout(sl) {
+    if (!sl.vid && !sl.list) return toast('Load a video in this slot first');
+    const e = els.get(sl.id);
+    if ('documentPictureInPicture' in window) {
+      try {
+        const w = await documentPictureInPicture.requestWindow({ width: 640, height: 360 });
+        w.document.body.style.cssText = 'margin:0;background:#000';
+        const f = w.document.createElement('iframe');
+        f.src = embedUrl(sl, true);
+        f.allow = 'autoplay; encrypted-media; fullscreen';
+        f.referrerPolicy = 'strict-origin-when-cross-origin';
+        f.style.cssText = 'border:0;width:100vw;height:100vh;display:block';
+        w.document.body.appendChild(f);
+        cmd(e, 'pauseVideo');
+        return;
+      } catch {}
+    }
+    const w = window.open(embedUrl(sl, true), 'mv-' + sl.id, 'popup,width=960,height=540');
+    if (!w) toast('Allow pop-ups for this page to open the floating player'); else cmd(e, 'pauseVideo');
+  }
+
+  /* ---------- Global controls ---------- */
+  document.getElementById('add').onclick = () => add();
+  colsSel.onchange = () => { state.cols = colsSel.value; layout(); save(); };
+  document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => {
+    const f = b.dataset.all;
+    for (const sl of state.slots) {
+      const e = els.get(sl.id); if (!e.iframe) continue;
+      cmd(e, f);
+      if (f === 'mute' || f === 'unMute') { sl.muted = f === 'mute'; paintMute(e, sl); }
+    }
+    save();
+  });
+  document.getElementById('share').onclick = async () => {
+    const ids = state.slots.filter(s => s.vid).map(s => s.vid + (s.start ? ':' + s.start : ''));
+    if (!ids.length) return toast('Load at least one video to share');
+    const link = location.origin + location.pathname + '#v=' + ids.join(',');
+    try { await navigator.clipboard.writeText(link); toast('Share link copied'); }
+    catch { prompt('Copy this link:', link); }
+  };
+  // Paste anywhere: fills the first empty slot, or adds a new one
+  document.addEventListener('paste', ev => {
+    if (ev.target.closest('input,textarea')) return;
+    const p = parse(ev.clipboardData.getData('text')); if (!p) return;
+    const empty = state.slots.find(s => !s.vid && !s.list);
+    if (empty) { Object.assign(empty, p); mount(empty, true); save(); } else add(p);
+  });
+
+  let tt;
+  function toast(msg) {
+    const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(tt); tt = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  load();
+  state.slots.forEach(build);
+  layout();
+  if (location.protocol === 'file:') toast('Serve this page over http(s) — YouTube blocks players opened from file://');
+})();
+</script>
+</body>
+</html>
